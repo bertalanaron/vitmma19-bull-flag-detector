@@ -54,7 +54,7 @@ Ensure that `src/utils.py` is used to configure the logger so that output is dir
 Before submitting your project, ensure you have completed the following steps.
 **Please note that the submission can only be accepted if these minimum requirements are met.**
 
-- [ ] **Project Information**: Filled out the "Project Information" section (Topic, Name, Extra Credit).
+- [x] **Project Information**: Filled out the "Project Information" section (Topic, Name, Extra Credit).
 - [ ] **Solution Description**: Provided a clear description of your solution, model, and methodology.
 - [ ] **Extra Credit**: If aiming for +1 mark, filled out the justification section.
 - [ ] **Data Preparation**: Included a script or precise description for data preparation.
@@ -76,9 +76,9 @@ Before submitting your project, ensure you have completed the following steps.
 
 ### Project Information
 
-- **Selected Topic**: [Enter Topic Name Here, options: AnkleAlign, Legal Text Decoder, Bull-flag detector, End-of-trip delay prediction]
-- **Student Name**: [Enter Your Name Here]
-- **Aiming for +1 Mark**: [Yes/No]
+- **Selected Topic**: Bull-flag detector
+- **Student Name**: Áron Bertalan
+- **Aiming for +1 Mark**: No
 
 ### Solution Description
 
