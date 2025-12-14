@@ -23,7 +23,6 @@
 ### Docker Instructions
 
 This project is containerized using Docker. Follow the instructions below to build and run the solution.
-[Adjust the commands that show how do build your container and run it with log output.]
 
 #### Build
 
@@ -71,3 +70,4 @@ The repository is structured as follows:
     - `Dockerfile`: Configuration file for building the Docker image with the necessary environment and dependencies.
     - `requirements.txt`: List of Python dependencies required for the project.
     - `README.md`: Project documentation and instructions.
+    - `run.sh`: This script is used by the Docker image and local testing to execute the main pipeline stages in sequence for demonstration purposes.
