@@ -24,6 +24,8 @@ TEST_SPLIT = 0.25  # Fraction of data to hold out for test set
 MIN_LABEL_LENGTH = 16
 MAX_LABEL_LENGTH = WINDOW  # Maximum label length in bars
 
+RANDOM_SEED = 42  # Seed for reproducibility
+
 raw_data_dir = "/data/raw"
 merged_data_dir = "/data/merged"
 processed_dir = "/data/processed"
@@ -55,7 +57,7 @@ def download_and_extract_zip(zip_url):
             
             logger.info("Extraction complete")
         else:
-            print(f"Failed to download file. Status code: {response.status_code}")
+            logger.error(f"Failed to download file. Status code: {response.status_code}")
     finally:
         # Clean up temporary file
         if os.path.exists(temp_zip_path):
@@ -451,7 +453,7 @@ def standardize_pole_starts(labels_json: dict):
                 continue
             
             csv_path = os.path.join(merged_data_dir, file_entry['normalized_file'])
-            print(f"Warning: Could not process label in {csv_path}: {e}")
+            logger.warning(f"Could not process label in {csv_path}: {e}")
             continue
     
     logger.info(f"Processed {len(standardized_labels)} flag pattern labels")
@@ -552,7 +554,11 @@ def generate_dataframes(labels_json: dict, out_dir: str):
     import numpy as np
     import random
     
-    logger.info(f"Generating training windows (window={WINDOW}, stride={STRIDE})...")
+    # Set random seed for reproducibility
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    
+    logger.info(f"Generating training windows (window={WINDOW}, stride={STRIDE}, seed={RANDOM_SEED})...")
     
     files = labels_json.get('files', [])
     all_labels = labels_json.get('labels', [])
