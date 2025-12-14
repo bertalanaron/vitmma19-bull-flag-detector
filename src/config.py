@@ -7,5 +7,5 @@ BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 
 # Paths
-DATA_DIR = "/app/data"
-MODEL_SAVE_PATH = "/app/model.pth"
+DATA_DIR = "/data"
+MODEL_SAVE_PATH = "/data/model.pth"

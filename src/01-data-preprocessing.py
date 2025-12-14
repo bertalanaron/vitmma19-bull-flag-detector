@@ -15,15 +15,14 @@ logger = setup_logger()
 
 N_BARS_LOOKBACK = 50  # How many candles to look back for pole search
 
-MIN_LABEL_LENGTH = 8
-MAX_LABEL_LENGTH = 200  # Maximum label length in bars
+WINDOW = 64  # Window size for training samples
+STRIDE = 8  # Stride between windows
+NEG_POS_RATIO = 2  # Ratio of negative to positive samples
+MIN_OVERLAP = 0.6  # Minimum overlap to assign a label to a window
+TEST_SPLIT = 0.15  # Fraction of data to hold out for test set
 
-# TYPE_LOOKUP = { 'none': 0, 'bullish': 1, 'bearish': 2 }
-# SUBTYPE_LOOKUP = { 'normal': 0, 'pennant': 1, 'wedge': 2 }
-ANNOTATION_LOOKUP = { 'none': 0, 
-    'bullish normal': 1, 'bullish pennant': 2, 'bullish wedge': 3, 
-    'bearish normal': 4, 'bearish pennant': 5, 'bearish wedge': 6 
-}
+MIN_LABEL_LENGTH = 16
+MAX_LABEL_LENGTH = WINDOW  # Maximum label length in bars
 
 raw_data_dir = "/data/raw"
 merged_data_dir = "/data/merged"
@@ -513,7 +512,7 @@ def filter_labels(labels_json: dict, standardized_labels: list):
             end_idx = end_indices[0]
             
             # Calculate length in bars
-            label_length = end_idx - start_idx + 1
+            label_length = int(end_idx - start_idx + 1)
             
             # Filter by length
             if MIN_LABEL_LENGTH <= label_length <= MAX_LABEL_LENGTH:
@@ -542,11 +541,246 @@ def filter_labels(labels_json: dict, standardized_labels: list):
         'labels': filtered_labels
     }
 
-def generate_dataframes(out_dir):
-    # TODO: generate data for training
-    # generate windows with WINDOW length, normalize data, assign label based on overlap
-    processed_dir
-    pass
+def generate_dataframes(labels_json: dict, out_dir: str):
+    """
+    Generate training data windows from labeled CSV files.
+    
+    Args:
+        labels_json: Dictionary with 'files' and 'labels' lists
+        out_dir: Output directory for processed data
+    """
+    import numpy as np
+    import random
+    
+    logger.info(f"Generating training windows (window={WINDOW}, stride={STRIDE})...")
+    
+    files = labels_json.get('files', [])
+    all_labels = labels_json.get('labels', [])
+    
+    # Store samples by file to enable proper train/test splitting
+    samples_by_file = {}  # file_id -> list of (features, class_id)
+    
+    # Pattern type+subtype to class ID mapping
+    # Class 0: no_flag
+    # Class 1-3: bullish (normal, pennant, wedge)
+    # Class 4-6: bearish (normal, pennant, wedge)
+    pattern_to_class = {
+        ('bullish', 'normal'): 1,
+        ('bullish', 'pennant'): 2,
+        ('bullish', 'wedge'): 3,
+        ('bearish', 'normal'): 4,
+        ('bearish', 'pennant'): 5,
+        ('bearish', 'wedge'): 6
+    }
+    
+    def extract_features(ohlc_window):
+        """
+        Extract features from OHLC window.
+        Input: (T, 4) - O, H, L, C
+        Output: (T, 5) - returns, body, upper_wick, lower_wick, range
+        """
+        O, H, L, C = ohlc_window.T
+        
+        returns = np.diff(np.log(C + 1e-8), prepend=0)
+        body = C - O
+        upper_wick = H - np.maximum(O, C)
+        lower_wick = np.minimum(O, C) - L
+        range_ = H - L
+        
+        feats = np.stack([returns, body, upper_wick, lower_wick, range_], axis=1)
+        
+        # Per-window normalization
+        feats = (feats - feats.mean(axis=0)) / (feats.std(axis=0) + 1e-6)
+        return feats.astype(np.float32)
+    
+    def window_label(start_idx, end_idx, file_labels):
+        """
+        Assign label to window based on overlap with labeled regions.
+        Returns class ID (0 for no-flag, 1 for bull, 2 for bear)
+        """
+        window_len = end_idx - start_idx
+        best_overlap = 0
+        best_class = 0  # no-flag
+        
+        for label in file_labels:
+            l_start = label['start_idx']
+            l_end = label['end_idx']
+            class_id = label['class_id']
+            
+            # Calculate overlap
+            overlap = max(0, min(end_idx, l_end) - max(start_idx, l_start))
+            frac = overlap / window_len
+            
+            if frac > best_overlap:
+                best_overlap = frac
+                best_class = class_id
+        
+        if best_overlap >= MIN_OVERLAP:
+            return best_class
+        return 0
+    
+    # Process each file
+    for file_entry in files:
+        file_id = file_entry['id']
+        csv_path = os.path.join(merged_data_dir, file_entry['normalized_file'])
+        
+        if not os.path.exists(csv_path):
+            logger.warning(f"CSV file not found: {csv_path}")
+            continue
+        
+        logger.info(f"Processing {file_entry['normalized_file']}...")
+        
+        # Load OHLC data
+        df = pd.read_csv(csv_path)
+        time_col = df.columns[0]
+        ohlc = df[['open', 'high', 'low', 'close']].values.astype(np.float32)
+        
+        # Get labels for this file with indices
+        file_labels = []
+        for label in all_labels:
+            if label['file'] != file_id:
+                continue
+            
+            pole_start_ts = label.get('pole_start')
+            end_ts = label.get('end')
+            label_type = label.get('type')  # bullish or bearish
+            label_subtype = label.get('subtype')  # normal, pennant, or wedge
+            
+            if not pole_start_ts or not end_ts or not label_type or not label_subtype:
+                continue
+            
+            # Find indices
+            start_mask = df[time_col] == pole_start_ts
+            end_mask = df[time_col] == end_ts
+            
+            start_indices = df[start_mask].index
+            end_indices = df[end_mask].index
+            
+            if len(start_indices) > 0 and len(end_indices) > 0:
+                file_labels.append({
+                    'start_idx': start_indices[0],
+                    'end_idx': end_indices[0],
+                    'class_id': pattern_to_class.get((label_type, label_subtype), 0)
+                })
+        
+        # Generate windows
+        N = len(ohlc)
+        for start in range(0, N - WINDOW, STRIDE):
+            end = start + WINDOW
+            
+            # Get label for this window
+            cls = window_label(start, end, file_labels)
+            
+            # Extract features
+            window_ohlc = ohlc[start:end]
+            features = extract_features(window_ohlc)
+            
+            # Store sample by file
+            sample = (features, cls)
+            if file_id not in samples_by_file:
+                samples_by_file[file_id] = []
+            samples_by_file[file_id].append(sample)
+    
+    # Count samples
+    total_samples = sum(len(samples) for samples in samples_by_file.values())
+    logger.info(f"Generated {total_samples} samples from {len(samples_by_file)} files")
+    
+    # Split files into train_val and test (file-level split to prevent data leakage)
+    file_ids = list(samples_by_file.keys())
+    random.shuffle(file_ids)
+    
+    n_test_files = max(1, int(len(file_ids) * TEST_SPLIT))
+    test_file_ids = set(file_ids[:n_test_files])
+    train_val_file_ids = set(file_ids[n_test_files:])
+    
+    logger.info(f"Split files: {len(train_val_file_ids)} train_val files, {len(test_file_ids)} test files")
+    
+    # Separate samples by split
+    train_val_samples = []
+    test_samples = []
+    
+    for file_id, samples in samples_by_file.items():
+        if file_id in test_file_ids:
+            test_samples.extend(samples)
+        else:
+            train_val_samples.extend(samples)
+    
+    logger.info(f"Samples per split: train_val={len(train_val_samples)}, test={len(test_samples)}")
+    
+    # Balance train_val dataset by subsampling negatives
+    train_val_positives = [s for s in train_val_samples if s[1] != 0]
+    train_val_negatives = [s for s in train_val_samples if s[1] == 0]
+    
+    k = min(len(train_val_negatives), NEG_POS_RATIO * len(train_val_positives))
+    if len(train_val_negatives) > k:
+        train_val_negatives = random.sample(train_val_negatives, k)
+        logger.info(f"Subsampled train_val negatives to {k} samples")
+    
+    train_val_samples = train_val_positives + train_val_negatives
+    random.shuffle(train_val_samples)
+    
+    # Note: We don't balance test set - keep natural distribution for evaluation
+    random.shuffle(test_samples)
+    
+    # Convert to arrays
+    X_train_val = np.stack([s[0] for s in train_val_samples])
+    y_train_val = np.array([s[1] for s in train_val_samples], dtype=np.int64)
+    X_test = np.stack([s[0] for s in test_samples])
+    y_test = np.array([s[1] for s in test_samples], dtype=np.int64)
+    
+    logger.info(f"Final dataset: train_val={X_train_val.shape}, test={X_test.shape}")
+    logger.info(f"Train_val class distribution: {np.bincount(y_train_val)}")
+    logger.info(f"Test class distribution: {np.bincount(y_test)}")
+    
+    # Save to disk
+    os.makedirs(out_dir, exist_ok=True)
+    
+    # Save train_validation set
+    X_train_val_path = os.path.join(out_dir, 'X_train_val.npy')
+    y_train_val_path = os.path.join(out_dir, 'y_train_val.npy')
+    np.save(X_train_val_path, X_train_val)
+    np.save(y_train_val_path, y_train_val)
+    logger.info(f"Saved train_validation data to {X_train_val_path} and {y_train_val_path}")
+    
+    # Save test set
+    X_test_path = os.path.join(out_dir, 'X_test.npy')
+    y_test_path = os.path.join(out_dir, 'y_test.npy')
+    np.save(X_test_path, X_test)
+    np.save(y_test_path, y_test)
+    logger.info(f"Saved test data to {X_test_path} and {y_test_path}")
+    
+    # Also save metadata
+    y_combined = np.concatenate([y_train_val, y_test])
+    metadata = {
+        'window_size': WINDOW,
+        'stride': STRIDE,
+        'num_features': X_train_val.shape[2],
+        'num_classes': len(np.unique(y_combined)),
+        'total_samples': len(X_train_val) + len(X_test),
+        'train_val_samples': len(X_train_val),
+        'test_samples': len(X_test),
+        'test_split': TEST_SPLIT,
+        'class_distribution': np.bincount(y_combined).tolist(),
+        'train_val_class_distribution': np.bincount(y_train_val).tolist(),
+        'test_class_distribution': np.bincount(y_test).tolist(),
+        'train_val_files': len(train_val_file_ids),
+        'test_files': len(test_file_ids),
+        'class_names': [
+            'no_flag',
+            'bullish_normal',
+            'bullish_pennant',
+            'bullish_wedge',
+            'bearish_normal',
+            'bearish_pennant',
+            'bearish_wedge'
+        ]
+    }
+    
+    metadata_path = os.path.join(out_dir, 'metadata.json')
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    logger.info(f"Saved metadata to {metadata_path}")
 
 def preprocess():
     logger.info("Preprocessing data...")
@@ -565,6 +799,9 @@ def preprocess():
     # Write labels.json to merged dir
     with open(merged_data_dir + "/labels.json", "w", encoding="utf-8") as f:
         json.dump(filtered_data, f)
+    
+    # Generate training data
+    generate_dataframes(filtered_data, processed_dir)
 
 if __name__ == "__main__":
     preprocess()
