@@ -19,7 +19,7 @@ WINDOW = 64  # Window size for training samples
 STRIDE = 8  # Stride between windows
 NEG_POS_RATIO = 2  # Ratio of negative to positive samples
 MIN_OVERLAP = 0.6  # Minimum overlap to assign a label to a window
-TEST_SPLIT = 0.15  # Fraction of data to hold out for test set
+TEST_SPLIT = 0.25  # Fraction of data to hold out for test set
 
 MIN_LABEL_LENGTH = 16
 MAX_LABEL_LENGTH = WINDOW  # Maximum label length in bars
@@ -719,7 +719,16 @@ def generate_dataframes(labels_json: dict, out_dir: str):
     train_val_samples = train_val_positives + train_val_negatives
     random.shuffle(train_val_samples)
     
-    # Note: We don't balance test set - keep natural distribution for evaluation
+    # Balance test dataset by subsampling negatives
+    test_positives = [s for s in test_samples if s[1] != 0]
+    test_negatives = [s for s in test_samples if s[1] == 0]
+    
+    k_test = min(len(test_negatives), NEG_POS_RATIO * len(test_positives))
+    if len(test_negatives) > k_test:
+        test_negatives = random.sample(test_negatives, k_test)
+        logger.info(f"Subsampled test negatives to {k_test} samples")
+    
+    test_samples = test_positives + test_negatives
     random.shuffle(test_samples)
     
     # Convert to arrays

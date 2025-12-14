@@ -23,19 +23,19 @@ class FlagCNN(nn.Module):
         super(FlagCNN, self).__init__()
         
         # Conv layers expect (batch, channels, sequence_length)
-        self.conv1 = nn.Conv1d(num_features, 64, kernel_size=5, padding=2)
-        self.bn1 = nn.BatchNorm1d(64)
-        self.conv2 = nn.Conv1d(64, 128, kernel_size=5, padding=2)
-        self.bn2 = nn.BatchNorm1d(128)
-        self.conv3 = nn.Conv1d(128, 256, kernel_size=5, padding=2)
-        self.bn3 = nn.BatchNorm1d(256)
+        self.conv1 = nn.Conv1d(num_features, 16, kernel_size=5, padding=2)
+        self.bn1 = nn.BatchNorm1d(16)
+        self.conv2 = nn.Conv1d(16, 32, kernel_size=5, padding=2)
+        self.bn2 = nn.BatchNorm1d(32)
+        self.conv3 = nn.Conv1d(32, 64, kernel_size=5, padding=2)
+        self.bn3 = nn.BatchNorm1d(64)
         
         self.pool = nn.MaxPool1d(2)
         self.dropout = nn.Dropout(0.3)
         self.global_pool = nn.AdaptiveAvgPool1d(1)
         
-        self.fc1 = nn.Linear(256, 128)
-        self.fc2 = nn.Linear(128, num_classes)
+        self.fc1 = nn.Linear(64, 32)
+        self.fc2 = nn.Linear(32, num_classes)
         
     def forward(self, x):
         # x: (batch, window, features) -> transpose to (batch, features, window)
