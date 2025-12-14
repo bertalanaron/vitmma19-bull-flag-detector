@@ -73,6 +73,16 @@ def evaluate():
     model.eval()
     logger.info(f"Loaded model from {model_path}")
     
+    # Log model architecture
+    logger.info(f"\n{'='*60}")
+    logger.info("MODEL ARCHITECTURE")
+    logger.info(f"{'='*60}")
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logger.info(f"Total parameters: {total_params:,}")
+    logger.info(f"Trainable parameters: {trainable_params:,}")
+    logger.info("")
+    
     # Make predictions
     all_predictions = []
     all_true = []

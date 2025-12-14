@@ -15,8 +15,18 @@ from model import FlagCNN
 logger = setup_logger()
 
 def train():
-    logger.info("Starting training process...")
-    logger.info(f"Loaded configuration. Epochs: {config.EPOCHS}, Batch size: {config.BATCH_SIZE}")
+    logger.info("="*60)
+    logger.info("TRAINING CONFIGURATION")
+    logger.info("="*60)
+    logger.info(f"Epochs: {config.EPOCHS}")
+    logger.info(f"Batch size: {config.BATCH_SIZE}")
+    logger.info(f"Learning rate: {config.LEARNING_RATE}")
+    logger.info(f"Early stopping patience: {config.EARLY_STOPPING_PATIENCE}")
+    logger.info(f"K-Folds: 5")
+    logger.info(f"Optimizer: Adam")
+    logger.info(f"LR Scheduler: ReduceLROnPlateau (factor=0.5, patience=5)")
+    logger.info(f"Dropout: 0.3")
+    logger.info("")
     
     # Load training data
     data_dir = config.DATA_DIR + "/processed"
@@ -81,6 +91,22 @@ def train():
         
         # Initialize model
         model = FlagCNN(num_features=num_features, num_classes=num_classes).to(device)
+        
+        # Log model architecture (only for first fold)
+        if fold == 0:
+            logger.info(f"\n{'='*60}")
+            logger.info("MODEL ARCHITECTURE")
+            logger.info(f"{'='*60}")
+            logger.info(str(model))
+            
+            # Count parameters
+            total_params = sum(p.numel() for p in model.parameters())
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            logger.info(f"\nTotal parameters: {total_params:,}")
+            logger.info(f"Trainable parameters: {trainable_params:,}")
+            logger.info(f"Non-trainable parameters: {total_params - trainable_params:,}")
+            logger.info("")
+        
         criterion = nn.CrossEntropyLoss(weight=class_weights)
         optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5)

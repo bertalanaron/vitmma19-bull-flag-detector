@@ -203,7 +203,14 @@ def predict(csv_path=None, confidence_threshold=0.5, min_window_confidence=0.3, 
         min_window_confidence: Minimum per-window confidence to consider
         max_bars: Maximum number of bars to process (for visualization clarity)
     """
-    logger.info("Starting inference...")
+    logger.info("="*60)
+    logger.info("INFERENCE CONFIGURATION")
+    logger.info("="*60)
+    logger.info(f"Confidence threshold: {confidence_threshold}")
+    logger.info(f"Min window confidence: {min_window_confidence}")
+    logger.info(f"Max bars to process: {max_bars if max_bars else 'unlimited'}")
+    logger.info(f"Max patterns to plot: 10")
+    logger.info("")
     
     # Find file if not provided
     if csv_path is None:
@@ -245,6 +252,11 @@ def predict(csv_path=None, confidence_threshold=0.5, min_window_confidence=0.3, 
     model = model.to(device)
     model.eval()
     logger.info(f"Loaded model from {model_path}")
+    
+    # Log model info
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"Model parameters: {total_params:,}")
+    logger.info("")
     
     # Load CSV data
     df = pd.read_csv(csv_path)
